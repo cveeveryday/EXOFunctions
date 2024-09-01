@@ -26,20 +26,19 @@ $tokenRequest = Invoke-WebRequest -Method Post -Uri $url -ContentType "applicati
 ($tokenRequest.Content | ConvertFrom-Json).access_token
 }
 
-function Get-Messages {
+function Get-GraphMessages {
   param ( 
     [Parameter(Mandatory = $true)] [String]$accessToken,
     [Parameter(Mandatory = $true)] [String]$emailAddress,
     [Parameter(Mandatory = $false)][Int] $limit = 10,
     [Parameter(Mandatory = $false)][Int] $skip = 0,
-    [Parameter(Mandatory = $false)][Int] $folder ,
-    [Parameter(Mandatory = $false)][Int] $isRead  = $false,
-    [Parameter(Mandatory = $false)][Int] $unRead = $false
+    [Parameter(Mandatory = $false)][String] $folderid = $null,
+    [Parameter(Mandatory = $false)][bool] $isRead  = $false
   )
 If (Test-IsEmailValid $emailAddress) {
   $messages = @()
-  $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/messages?$top="  + $limit + "&$skip="
-  $url
+  $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages?filter=isRead+eq+" + $isread.ToString().ToLower()
+  $url += "&Select=id,subject,receivedDateTime,from,bodyPreview"
   $headers = @{
     'Authorization' = "Bearer " + $accessToken
     'Content-Type' = 'application/json'
@@ -47,10 +46,8 @@ If (Test-IsEmailValid $emailAddress) {
   $params = @{
     '$top' = $limit
     '$skip' = $skip
+    '$isRead' = $isRead.ToString().ToLower()
   }
-  if ($folder) { $params.Add('FolderId', $folder) }
-  if ($isRead -eq $true) { $params.Add('IsRead', 'True') }
-  elseif ($unRead -eq $true) { $params.Add('IsRead', 'False') }
   
   try {
     $response = Invoke-WebRequest -Uri $url -Method Get -Headers $headers -Body $params -UseBasicParsing
@@ -72,7 +69,7 @@ function Test-IsEmailValid {
     [Parameter(Mandatory = $true)] [String]$emailAddress
   )
 
-Return $emailAddress -match '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+$emailAddress -match '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
 }
 
 function Get-MailFolder {
@@ -105,6 +102,9 @@ $folders
 
 $token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $tenantID
 $folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@itissimple.ca" -folderName "Inbox"
-$folders.value
+$folders.value[0].id
+$messages = Get-GraphMessages -accessToken $token  -emailAddress "PattiF@itissimple.ca"  -folderId $folders.value[0].id -limit 10 -skip 0 -isRead $false
+$messages
+$messages.count
 
 
