@@ -1,5 +1,7 @@
 .\variables.ps1
-
+########################################################################################################################
+###########################################FUNCTIONS PART###############################################################
+########################################################################################################################
 
 function Get-GraphToken {
   param (
@@ -30,29 +32,34 @@ function Get-GraphMessages {
   param ( 
     [Parameter(Mandatory = $true)] [String]$accessToken,
     [Parameter(Mandatory = $true)] [String]$emailAddress,
-    [Parameter(Mandatory = $false)][Int] $limit = 10,
+    [Parameter(Mandatory = $false)][Int] $limit = 1,
     [Parameter(Mandatory = $false)][Int] $skip = 0,
     [Parameter(Mandatory = $false)][String] $folderid = $null,
-    [Parameter(Mandatory = $false)][bool] $isRead  = $false
+    [Parameter(Mandatory = $false)][bool] $isRead  = $true,
+    [ Parameter(Mandatory = $false)][string] $url  = $null
   )
 If (Test-IsEmailValid $emailAddress) {
   $messages = @()
-  $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages?filter=isRead+eq+" + $isread.ToString().ToLower()
-  $url += "&Select=id,subject,receivedDateTime,from,bodyPreview"
+  if (!$url) {
+  $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
+  }
   $headers = @{
     'Authorization' = "Bearer " + $accessToken
     'Content-Type' = 'application/json'
   }
-  $params = @{
-    '$top' = $limit
-    '$skip' = $skip
-    '$isRead' = $isRead.ToString().ToLower()
-  }
+$params = @{
+   'top'  = $limit
+   'skip' = $skip
+   'filter' = "isRead eq " + $isread.ToString().ToLower()
+   }
+   
   
   try {
-    $response = Invoke-WebRequest -Uri $url -Method Get -Headers $headers -Body $params -UseBasicParsing
-    $messages += ($response.Content | ConvertFrom-Json).value
-    $messages
+    $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers -UseBasicParsing -Body $params
+    $messages += $response.value
+    If ($response.'@odata.nextlink') {
+    $messages += Get-GraphMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
+    }
   } catch {
     Write-Host "Error getting messages: $($error[0])"
   }
@@ -61,7 +68,7 @@ If (Test-IsEmailValid $emailAddress) {
     Write-Error  "Invalid email address"
     Break
 }
-
+$messages
 }
 
 function Test-IsEmailValid {
@@ -83,28 +90,44 @@ function Get-MailFolder {
   $authHeader = @{
     'Content-Type'='application\json'
     'Authorization'="Bearer $token"
- }
- If ($folderName)
- {
-  $uri = "https://graph.microsoft.com/v1.0/users/$emailAddress/mailFolders/?filter=displayname eq '" + $folderName + "'"
-  $folders = Invoke-RestMethod -Uri $uri  -Method Get  -Headers $authHeader  -UseBasicParsing
-
-}
+  }
+ If ($folderName -and $folderName -ne "")
+  {
+    $uri = "https://graph.microsoft.com/v1.0/users/$emailAddress/mailFolders/?filter=displayname eq '" + $folderName + "'"
+    $folders = Invoke-RestMethod -Uri $uri  -Method Get  -Headers $authHeader  -UseBasicParsing
+  }
  else{
-  $folders = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$emailAddress/mailFolders/?" -Method Get -Headers $authHeader -UseBasicParsing
-
-}
+    $uri = 'https://graph.microsoft.com/v1.0/users/$emailAddress/mailFolders'
+    $folders = Invoke-RestMethod -Uri $uri -Method Get -Headers $authHeader -UseBasicParsing
+  }
 $folders
 }
 
-
+########################################################################################################################
+###########################################EXECUTION PART###############################################################
+########################################################################################################################
 
 
 $token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $tenantID
-$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@itissimple.ca" -folderName "Inbox"
+$commonMailFolders = @("inbox", "sent items", "drafts","deleted items")
+#$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox"
+#$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName ""
+$folders = @()
+foreach ($folder in $commonMailFolders)
+{
+  $folders += Get-MailFolder -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderName $folder
+}
+ 
+$message = "About to list messages in this folder " + $($folders.Value.Displayname) -join ","
+Sleep -Seconds 4
+
+Write-Host $message
+$messages = @()
+$folders.value | ForEach-Object {
+  $messages += Get-GraphMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $true
+  $messages += Get-GraphMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $false
+}
+
 $folders.value[0].id
-$messages = Get-GraphMessages -accessToken $token  -emailAddress "PattiF@itissimple.ca"  -folderId $folders.value[0].id -limit 10 -skip 0 -isRead $false
 $messages
 $messages.count
-
-
