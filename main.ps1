@@ -71,6 +71,30 @@ $params = @{
 $messages
 }
 
+function Set-MessageAsRead {
+ param (
+    [Parameter(Mandatory = $true)][String] $accessToken,
+    [Parameter(Mandatory = $true)][string] $emailAddress,
+    [Parameter(Mandatory = $true)][string] $messageId
+ )
+ $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/messages/"  + $messageId
+
+ $headers = @{
+   'Authorization' = "Bearer  "  + $accessToken
+    'Content-Type' =  'application/json'
+ }
+ $params = @{
+   'isRead' = "true"
+ }
+ try {
+   $response = Invoke-RestMethod -Uri $url -Method Patch  -Headers $headers  -UseBasicParsing  -Body $params
+   Write-Host "Message set as read"
+   } catch  {
+    Write-Error "Error setting message as read: $($error[0])"
+    Break
+    }
+}
+
 function Test-IsEmailValid {
   param ( 
     [Parameter(Mandatory = $true)] [String]$emailAddress
