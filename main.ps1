@@ -28,7 +28,7 @@ $tokenRequest = Invoke-WebRequest -Method Post -Uri $url -ContentType "applicati
 ($tokenRequest.Content | ConvertFrom-Json).access_token
 }
 
-function Get-GraphMessages {
+function Get-MailMessages {
   param ( 
     [Parameter(Mandatory = $true)] [String]$accessToken,
     [Parameter(Mandatory = $true)] [String]$emailAddress,
@@ -38,7 +38,7 @@ function Get-GraphMessages {
     [Parameter(Mandatory = $false)][bool] $isRead  = $true,
     [ Parameter(Mandatory = $false)][string] $url  = $null
   )
-If (Test-IsEmailValid $emailAddress) {
+If (Test-IsEmailAddressValid $emailAddress) {
   $messages = @()
   if (!$url) {
   $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
@@ -58,7 +58,7 @@ $params = @{
     $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers -UseBasicParsing -Body $params
     $messages += $response.value
     If ($response.'@odata.nextlink') {
-    $messages += Get-GraphMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
+    $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
     }
   } catch {
     Write-Host "Error getting messages: $($error[0])"
@@ -71,7 +71,7 @@ $params = @{
 $messages
 }
 
-function Set-MessageAsRead {
+function Set-MailMessageAsRead {
  param (
     [Parameter(Mandatory = $true)][String] $accessToken,
     [Parameter(Mandatory = $true)][string] $emailAddress,
@@ -95,7 +95,7 @@ function Set-MessageAsRead {
     }
 }
 
-function Test-IsEmailValid {
+function Test-IsEmailAddressValid {
   param ( 
     [Parameter(Mandatory = $true)] [String]$emailAddress
   )
@@ -127,6 +127,28 @@ function Get-MailFolder {
 $folders
 }
 
+function Move-MailMessage {
+  param(
+    [Parameter(Mandatory = $true)] [String]$accessToken,
+    [Parameter(Mandatory = $true)][String]$emailAddress,
+    [Parameter(Mandatory = $true)][String]$messageId,
+    [Parameter(Mandatory = $true)] [String] $folderName
+    )
+    $authHeader = @{
+      'Content-Type'='application\json'
+      'Authorization'="Bearer $token"
+    }
+    $uri = "https://graph.microsoft.com/v1.0/users/$emailAddress/messages/$messageId/move/"
+    $body = @{
+      'destinationid' = $folderName
+    }
+    try {
+      $response = Invoke-RestMethod -Uri $uri   -Method Post  -Headers $authHeader  -UseBasicParsing  -BodyAsJson $body
+    }
+    catch {
+      Write-Error $_.Exception.Message
+    }
+}
 ########################################################################################################################
 ###########################################EXECUTION PART###############################################################
 ########################################################################################################################
@@ -148,8 +170,8 @@ Sleep -Seconds 4
 Write-Host $message
 $messages = @()
 $folders.value | ForEach-Object {
-  $messages += Get-GraphMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $true
-  $messages += Get-GraphMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $false
+  $messages += Get-MailMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $true
+  $messages += Get-MailMessages -accessToken $token  -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $_.id -limit 1000 -skip 0 -isRead $false
 }
 
 $folders.value[0].id
