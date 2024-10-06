@@ -32,33 +32,35 @@ function Get-MailMessages {
   param ( 
     [Parameter(Mandatory = $true)] [String]$accessToken,
     [Parameter(Mandatory = $true)] [String]$emailAddress,
-    [Parameter(Mandatory = $false)][Int] $limit = 1,
+    [Parameter(Mandatory = $false)][Int] $limit = 0,
     [Parameter(Mandatory = $false)][Int] $skip = 0,
     [Parameter(Mandatory = $false)][String] $folderid = $null,
-    [Parameter(Mandatory = $false)][bool] $isRead  = $true,
+    [Parameter(Mandatory = $false)][bool] $isRead  = $false,
     [ Parameter(Mandatory = $false)][string] $url  = $null
   )
 If (Test-IsEmailAddressValid $emailAddress) {
   $messages = @()
+  $params = @{}
   if (!$url) {
-  $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
+    $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
+    $params = @{
+      'skip' = $skip
+      'filter' = "isRead eq " + $isread.ToString().ToLower()
+      }
+    if ($limit -gt  0) {
+      $params['top'] = $limit
+    }
   }
   $headers = @{
     'Authorization' = "Bearer " + $accessToken
     'Content-Type' = 'application/json'
   }
-$params = @{
-   'top'  = $limit
-   'skip' = $skip
-   'filter' = "isRead eq " + $isread.ToString().ToLower()
-   }
-   
-  
+     
   try {
     $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers -UseBasicParsing -Body $params
     $messages += $response.value
-    If ($response.'@odata.nextlink') {
-    $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
+    If ($response.'@odata.nextlink' -and ($limit -eq 0 -or $limit -gt 1000)) {
+      $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
     }
   } catch {
     Write-Host "Error getting messages: $($error[0])"
@@ -124,7 +126,7 @@ function Get-MailFolder {
     $uri = 'https://graph.microsoft.com/v1.0/users/$emailAddress/mailFolders'
     $folders = Invoke-RestMethod -Uri $uri -Method Get -Headers $authHeader -UseBasicParsing
   }
-$folders
+$folders.value
 }
 
 function Move-MailMessage {
@@ -149,12 +151,34 @@ function Move-MailMessage {
       Write-Error $_.Exception.Message
     }
 }
+
+function ConvertFrom-Html {
+  param([Parameter(Mandatory=$true)][string]$inputString)
+  $outputString = $inputString
+  $outputString = $outputString -replace '<.*?>', ''
+  $outputString = $outputString -replace '&nbsp;', ' '
+  $outputString = $outputString -replace '<br>', "`n"
+  $outputString = $outputString -replace '</p>', "`n"
+  $outputString = $outputString -replace "&#[0-9A-F]{5};", ''
+  $arrayString = $outputString -split "`n"
+  $arrayString | ForEach-Object {  
+                      if ($_ -match '<!--' -or $css) 
+                      { $css = $true} 
+                      else 
+                      {$newString += $_; $newString += "`n" }; if ( $_ -match '-->' ) {$css = $false }  
+                                } 
+  return $newString
+}
+
 ########################################################################################################################
 ###########################################EXECUTION PART###############################################################
 ########################################################################################################################
-
-
 $token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $tenantID
+$folderId = (Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox").id
+$emailsAll = Get-MailMessages -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $folderId -limit 1
+ConvertFrom-Html -inputString $emailsAll.body.content
+
+<#
 $commonMailFolders = @("inbox", "sent items", "drafts","deleted items")
 #$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox"
 #$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName ""
@@ -177,3 +201,4 @@ $folders.value | ForEach-Object {
 $folders.value[0].id
 $messages
 $messages.count
+#>
