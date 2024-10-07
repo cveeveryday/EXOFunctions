@@ -157,9 +157,12 @@ function ConvertFrom-Html {
   $outputString = $inputString
   $outputString = $outputString -replace '<.*?>', ''
   $outputString = $outputString -replace '&nbsp;', ' '
-  $outputString = $outputString -replace '<br>', "`n"
-  $outputString = $outputString -replace '</p>', "`n"
+  $outputString = $outputString -replace '<br>', " `n"
+  $outputString = $outputString -replace '</p>', " `n"
   $outputString = $outputString -replace "&#[0-9A-F]{5};", ''
+  $outputString = $outputString -replace '(?s)<img.*?>', ''
+  $outputString = $outputString -replace "`u{2018}", ''
+  $outputString = $outputString -replace "`u{2019}", ''
   $arrayString = $outputString -split "`n"
   $arrayString | ForEach-Object {  
                       if ($_ -match '<!--' -or $css) 
@@ -170,15 +173,23 @@ function ConvertFrom-Html {
   return $newString
 }
 
+
 ########################################################################################################################
 ###########################################EXECUTION PART###############################################################
 ########################################################################################################################
+<#
 $token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $tenantID
 $folderId = (Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox").id
-$emailsAll = Get-MailMessages -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $folderId -limit 1
-ConvertFrom-Html -inputString $emailsAll.body.content
+$emailsAll = Get-MailMessages -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $folderId -limit 10
+foreach ($email in $emailsAll) {
+  $email.subject
+  $email.sender.emailAddress.address
+  $email.toRecipients.emailAddress.address
+  $email.receivedDateTime
+  $(ConvertFrom-Html -inputString $email.body.content)
 
-<#
+}
+
 $commonMailFolders = @("inbox", "sent items", "drafts","deleted items")
 #$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox"
 #$folders = Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName ""
