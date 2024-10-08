@@ -85,12 +85,12 @@ function Set-MailMessageAsRead {
    'Authorization' = "Bearer  "  + $accessToken
     'Content-Type' =  'application/json'
  }
- $params = @{
-   'isRead' = "true"
- }
+ $params = '{
+              "isRead" : "true"
+            }'
  try {
    $response = Invoke-RestMethod -Uri $url -Method Patch  -Headers $headers  -UseBasicParsing  -Body $params
-   Write-Host "Message set as read"
+   $response.id
    } catch  {
     Write-Error "Error setting message as read: $($error[0])"
     Break
@@ -131,21 +131,23 @@ $folders.value
 
 function Move-MailMessage {
   param(
-    [Parameter(Mandatory = $true)] [String]$accessToken,
+    [Parameter(Mandatory = $true)][String]$accessToken,
     [Parameter(Mandatory = $true)][String]$emailAddress,
     [Parameter(Mandatory = $true)][String]$messageId,
-    [Parameter(Mandatory = $true)] [String] $folderName
+    [Parameter(Mandatory = $true)][String]$folderName
     )
-    $authHeader = @{
-      'Content-Type'='application\json'
-      'Authorization'="Bearer $token"
+    $headers = @{
+      'Authorization' = 'Bearer ' + $accessToken
+      'Content-Type' = 'application/json'
     }
+    $body = '{     
+               "destinationid" : "' + $folderName + '"
+             }'
     $uri = "https://graph.microsoft.com/v1.0/users/$emailAddress/messages/$messageId/move/"
-    $body = @{
-      'destinationid' = $folderName
-    }
+
     try {
-      $response = Invoke-RestMethod -Uri $uri   -Method Post  -Headers $authHeader  -UseBasicParsing  -BodyAsJson $body
+      $response = Invoke-RestMethod -Method 'Post' -Uri $uri -Headers $headers -Body $body
+      $response.id
     }
     catch {
       Write-Error $_.Exception.Message
@@ -212,4 +214,25 @@ $folders.value | ForEach-Object {
 $folders.value[0].id
 $messages
 $messages.count
-#>
+
+
+$token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $tenantID
+$folderId = (Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox").id
+$emailsAll = Get-MailMessages -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $folderId -limit 0
+$emailsProcessed = @()
+foreach ($email in $emailsAll) {
+  $emailsProcessed += [PSCustomObject]@{
+    messageid = $email.id
+    Title = ConvertFrom-Html -inputString $email.subject
+    Sender = $email.sender.emailAddress.address
+    To = $email.toRecipients.emailAddress.address
+    DateReceived = $email.receivedDateTime
+    Body = ConvertFrom-Html -inputString $email.body.content
+  }
+  }
+  foreach ($email in $emailsProcessed) {
+    $email.messageid = Move-MailMessage -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Archive" -messageId $email.messageid
+    $email.messageId = Set-MailMessageAsRead -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -messageId $email.messageid
+    $email.messageId
+  }
+    #>
