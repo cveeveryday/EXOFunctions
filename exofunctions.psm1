@@ -114,7 +114,7 @@ function Get-MailFolder {
   )
 
   $authHeader = @{
-    'Content-Type'='application\json'
+    'Content-Type'='application/json'
     'Authorization'="Bearer $token"
   }
  If ($folderName -and $folderName -ne "")
