@@ -1,4 +1,4 @@
-#.\variables.ps1
+
 ########################################################################################################################
 ###########################################FUNCTIONS PART###############################################################
 ########################################################################################################################
@@ -140,8 +140,9 @@ function Move-MailMessage {
       'Authorization' = 'Bearer ' + $accessToken
       'Content-Type' = 'application/json'
     }
+    $folder = (Get-MailFolder -accessToken $accessToken -emailAddress $emailAddress -folderName $folderName)
     $body = '{     
-               "destinationid" : "' + $folderName + '"
+               "destinationid" : "' + $($folder.id) + '"
              }'
     $uri = "https://graph.microsoft.com/v1.0/users/$emailAddress/messages/$messageId/move/"
 
@@ -150,7 +151,8 @@ function Move-MailMessage {
       $response.id
     }
     catch {
-      Write-Error $_.Exception.Message
+      return Write-Error $_.Exception.Message , $uri
+
     }
 }
 
@@ -184,12 +186,7 @@ $token = Get-GraphToken -appID $appID -clientSecret $clientSecret -tenantID $ten
 $folderId = (Get-MailFolder -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com" -folderName "Inbox").id
 $emailsAll = Get-MailMessages -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderId $folderId -limit 10
 foreach ($email in $emailsAll) {
-  $email.subject
-  $email.sender.emailAddress.address
-  $email.toRecipients.emailAddress.address
-  $email.receivedDateTime
-  $(ConvertFrom-Html -inputString $email.body.content)
-
+  Move-MailMessage -accessToken $token -emailAddress "PattiF@zpzbx.onmicrosoft.com"  -folderName $folder -messageId $email.id
 }
 
 $commonMailFolders = @("inbox", "sent items", "drafts","deleted items")
