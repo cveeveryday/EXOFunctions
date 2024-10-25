@@ -14,7 +14,7 @@ function Get-GraphToken {
   )
 
 #Prepare token request
-$url = 'https://login.microsoftonline.com/' + $tenantId + '/oauth2/v2.0/token'
+$uri = 'https://login.microsoftonline.com/' + $tenantId + '/oauth2/v2.0/token'
 
 $body = @{
     grant_type = "client_credentials"
@@ -24,7 +24,7 @@ $body = @{
 }
 
 #Obtain the token
-$tokenRequest = Invoke-WebRequest -Method Post -Uri $url -ContentType "application/x-www-form-urlencoded" -Body $body -UseBasicParsing -ErrorAction Stop
+$tokenRequest = Invoke-WebRequest -Method Post -Uri $uri -ContentType "application/x-www-form-urlencoded" -Body $body -UseBasicParsing -ErrorAction Stop
 ($tokenRequest.Content | ConvertFrom-Json).access_token
 }
 
@@ -36,13 +36,13 @@ function Get-MailMessages {
     [Parameter(Mandatory = $false)][Int] $skip = 0,
     [Parameter(Mandatory = $false)][String] $folderid = $null,
     [Parameter(Mandatory = $false)][bool] $isRead  = $false,
-    [ Parameter(Mandatory = $false)][string] $url  = $null
+    [ Parameter(Mandatory = $false)][string] $uri  = $null
   )
 If (Test-IsEmailAddressValid $emailAddress) {
   $messages = @()
   $params = @{}
-  if (!$url) {
-    $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
+  if (!$uri) {
+    $uri = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/mailFolders/" + $folderid +  "/messages"
     $params = @{
       'skip' = $skip
       'filter' = "isRead eq " + $isread.ToString().ToLower()
@@ -57,10 +57,10 @@ If (Test-IsEmailAddressValid $emailAddress) {
   }
      
   try {
-    $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers -UseBasicParsing -Body $params
+    $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -UseBasicParsing -Body $params
     $messages += $response.value
     If ($response.'@odata.nextlink' -and ($limit -eq 0 -or $limit -gt 1000)) {
-      $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -url $response.'@odata.nextlink'
+      $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -uri $response.'@odata.nextlink'
     }
   } catch {
     Write-Host "Error getting messages: $($error[0])"
@@ -73,13 +73,71 @@ If (Test-IsEmailAddressValid $emailAddress) {
 $messages
 }
 
+function Get-OldestVoiceMailMessage {
+  param  (
+    [Parameter(Mandatory = $false)][String]$accessToken,
+    [Parameter(Mandatory = $true)] [String]$emailAddress,
+    [Parameter(Mandatory = $false)][String]$folderid = $null
+  )
+  If (Test-IsEmailAddressValid $emailAddress) {
+    $messages = @()
+    if (!$uri) {
+    if ($folderid)  {
+      $uri = 'https://graph.microsoft.com/v1.0/users/' + $emailAddress  + '/mailFolders/'  + $folderid + '/messages?$filter=contains(subject,' + "'Voice Mail'" + ')&$orderby=receivedDateTime asc&$top=1'
+    }else   {
+      $uri = 'https://graph.microsoft.com/v1.0/users/' + $emailAddress  + '/mailFolders/inbox/messages?$filter=contains(subject,' + "'Voice Mail'" + ')'
+    }
+  }
+    $headers = @{
+      'Authorization' = "Bearer " + $accessToken
+      'Content-Type' = 'application/json'
+    }
+       
+    try {
+      $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -UseBasicParsing -Body $params
+      $messages += $response.value
+      If ($response.'@odata.nextlink' -and ($limit -eq 0 -or $limit -gt 1000)) {
+        $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -uri $response.'@odata.nextlink'
+      }
+    } catch {
+      Write-Host "Error getting messages: $($error[0])"
+    }
+  }else {
+      Write-Error  "Invalid email address"
+      Break
+  }
+  if ($messages -and $messages.length -gt 0) {
+      $oldestMessage = $null
+      $oldestMessage = $messages[0]
+      foreach ($message in $messages) {
+        if ($message.receivedDateTime  -lt  $oldestMessage.receivedDateTime) {
+          $oldestMessage = $message
+      }
+    }
+    If (Test-IsMailMessageVoicemail($oldestMessage)) {
+    Return $oldestMessage
+    }
+  }else {
+    Write-Debug "No messages found"
+  }
+}
+
+function Test-IsMailMessageVoicemail {
+  param   (
+    [Parameter(Mandatory = $true)][PSCustomObject]$message
+  )
+  $isVoicemail = $false
+  $isVoicemail = $message.subject -match 'Voice Mail'
+  
+}
+
 function Set-MailMessageAsRead {
  param (
     [Parameter(Mandatory = $true)][String] $accessToken,
     [Parameter(Mandatory = $true)][string] $emailAddress,
     [Parameter(Mandatory = $true)][string] $messageId
  )
- $url = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/messages/"  + $messageId
+ $uri = "https://graph.microsoft.com/v1.0/users/" + $emailAddress + "/messages/"  + $messageId
 
  $headers = @{
    'Authorization' = "Bearer  "  + $accessToken
@@ -89,7 +147,7 @@ function Set-MailMessageAsRead {
               "isRead" : "true"
             }'
  try {
-   $response = Invoke-RestMethod -Uri $url -Method Patch  -Headers $headers  -UseBasicParsing  -Body $params
+   $response = Invoke-RestMethod -Uri $uri -Method Patch  -Headers $headers  -UseBasicParsing  -Body $params
    $response.id
    } catch  {
     Write-Error "Error setting message as read: $($error[0])"
