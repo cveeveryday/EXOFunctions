@@ -76,17 +76,12 @@ $messages
 function Get-OldestVoiceMailMessage {
   param  (
     [Parameter(Mandatory = $false)][String]$accessToken,
-    [Parameter(Mandatory = $true)] [String]$emailAddress,
-    [Parameter(Mandatory = $false)][String]$folderid = $null
+    [Parameter(Mandatory = $true)] [String]$emailAddress
   )
   If (Test-IsEmailAddressValid $emailAddress) {
     $messages = @()
     if (!$uri) {
-    if ($folderid)  {
-      $uri = 'https://graph.microsoft.com/v1.0/users/' + $emailAddress  + '/mailFolders/'  + $folderid + '/messages?$filter=contains(subject,' + "'Voice Mail'" + ')&$orderby=receivedDateTime asc&$top=1'
-    }else   {
       $uri = 'https://graph.microsoft.com/v1.0/users/' + $emailAddress  + '/mailFolders/inbox/messages?$filter=contains(subject,' + "'Voice Mail'" + ')'
-    }
   }
     $headers = @{
       'Authorization' = "Bearer " + $accessToken
@@ -94,7 +89,7 @@ function Get-OldestVoiceMailMessage {
     }
        
     try {
-      $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -UseBasicParsing -Body $params
+      $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -UseBasicParsing
       $messages += $response.value
       If ($response.'@odata.nextlink' -and ($limit -eq 0 -or $limit -gt 1000)) {
         $messages += Get-MailMessages -accessToken $accessToken -emailAddress $emailAddress -uri $response.'@odata.nextlink'
@@ -114,7 +109,12 @@ function Get-OldestVoiceMailMessage {
           $oldestMessage = $message
       }
     }
-    If (Test-IsMailMessageVoicemail($oldestMessage)) {
+    $messageId = $oldestMessage.id
+    $uri  = 'https://graph.microsoft.com/v1.0/users/' + $emailAddress   + '/messages/' + $messageId + '/attachments'
+    $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers -UseBasicParsing
+    $attachments = $response.value
+
+    If (Test-IsMailMessageVoicemail -message $oldestMessage -attachments $attachments) {
     Return $oldestMessage
     }
   }else {
@@ -124,11 +124,19 @@ function Get-OldestVoiceMailMessage {
 
 function Test-IsMailMessageVoicemail {
   param   (
-    [Parameter(Mandatory = $true)][PSCustomObject]$message
+    [Parameter(Mandatory = $true)][PSCustomObject]$message,
+    [Parameter(Mandatory = $true)][PSCustomObject]$attachments
   )
   $isVoicemail = $false
-  $isVoicemail = $message.subject -match 'Voice Mail'
-  
+  $isVoicemail = $message.subject -match 'Voice Mail' -and $message.hasAttachments
+  If ($isVoicemail -and $attachments.length -eq 1)
+    {
+      $isVoicemail  = $attachments.name -match '.*\.mp3'
+    }else
+    {
+      $isVoicemail = $false
+    }
+  $isVoicemail
 }
 
 function Set-MailMessageAsRead {
